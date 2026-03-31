@@ -17,7 +17,8 @@ pygame.mixer.init()
 
 WIDTH, HEIGHT  = 1200, 600
 WORLD_WIDTH    = 4200
-screen         = pygame.display.set_mode((WIDTH, HEIGHT))
+screen         = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+WIDTH, HEIGHT  = screen.get_size()   # ← passt sich deinem Monitor an
 pygame.display.set_caption("PROJEKT FRONTLINE  v6.0")
 clock          = pygame.time.Clock()
 FPS            = 60
@@ -34,6 +35,11 @@ BULLET_COL = (255, 240, 100)
 SNIPER_COL = (100, 220, 255)
 ROCKET_COL = (255, 100, 30)
 GRENADE_COL= (80,  160, 80)
+WATER_COL  = (20,  80,  160)
+BUBBLE_COL = (100, 180, 255)
+TORPEDO_COL= (50,  220, 180)
+SPEAR_COL  = (180, 220, 255)
+SKY_ZONE_COL=(180, 210, 255)
 
 GROUND_Y            = HEIGHT - 80
 HIGHSCORE_FILE      = "frontline_scores.json"
@@ -509,50 +515,359 @@ class Particle:
     def alive(self): return self.life>0
 
 class ParticleSystem:
-    def __init__(self): self.particles=[]
-    def _p(self,*a,**kw): self.particles.append(Particle(*a,**kw))
-    def spawn_muzzle_flash(self,x,y,d):
-        for _ in range(8):
-            a=random.uniform(-0.4,0.4);s=random.uniform(3,9)
-            c=random.choice([(255,240,100),(255,180,50),(255,255,200)])
-            self._p(x,y,math.cos(a)*s*d,math.sin(a)*s,random.randint(4,10),c,random.randint(2,5),0)
-    def spawn_blood(self,x,y,count=12):
-        for _ in range(count):
-            a=random.uniform(0,2*math.pi);s=random.uniform(1,6)
-            c=random.choice([(180,20,20),(220,40,40),(240,60,60)])
-            self._p(x,y,math.cos(a)*s,math.sin(a)*s-2,random.randint(15,30),c,random.randint(2,5))
-    def spawn_explosion(self,x,y,scale=1.0):
-        for _ in range(int(40*scale)):
-            a=random.uniform(0,2*math.pi);s=random.uniform(2,12*scale)
-            c=random.choice([(255,200,50),(255,120,20),(255,60,10),(200,200,200)])
-            self._p(x,y,math.cos(a)*s,math.sin(a)*s-3,random.randint(20,45),c,random.randint(4,max(4,int(8*scale))),0.25)
-        for _ in range(int(20*scale)):
-            a=random.uniform(0,2*math.pi);s=random.uniform(0.5,3)
-            self._p(x,y,math.cos(a)*s,math.sin(a)*s-4,random.randint(35,60),(80,80,80),random.randint(6,12),-0.05)
-    def spawn_dust(self,x,y):
-        for _ in range(5): self._p(x,y,random.uniform(-2,2),random.uniform(-3,-1),random.randint(8,18),(120,100,70),random.randint(2,4))
-    def spawn_shell(self,x,y,d):
-        self._p(x,y,-d*random.uniform(2,5),random.uniform(-4,-1),random.randint(20,35),(200,180,50),3)
-    def spawn_sparks(self,x,y,count=10):
-        for _ in range(count):
-            a=random.uniform(0,2*math.pi);s=random.uniform(2,8)
-            c=random.choice([(255,200,50),(255,255,100),(200,200,200)])
-            self._p(x,y,math.cos(a)*s,math.sin(a)*s,random.randint(5,15),c,2,0.3)
-    def spawn_smoke(self,x,y):
-        self._p(x,y,random.uniform(-1,1),random.uniform(-2,-0.5),random.randint(20,40),(100,100,100),random.randint(4,8),-0.02)
-    def spawn_pickup(self,x,y,color):
+    def __init__(self): self.particles = []
+    def _p(self, *a, **kw): self.particles.append(Particle(*a, **kw))
+
+    def spawn_muzzle_flash(self, x, y, d):
+        # Heller Kern-Flash
         for _ in range(12):
-            a=random.uniform(0,2*math.pi);s=random.uniform(1,5)
-            self._p(x,y,math.cos(a)*s,math.sin(a)*s-2,random.randint(20,35),color,random.randint(2,4))
+            a = random.uniform(-0.5, 0.5)
+            s = random.uniform(4, 12)
+            c = random.choice([(255, 255, 180), (255, 220, 80), (255, 160, 30)])
+            self._p(x, y, math.cos(a)*s*d, math.sin(a)*s, random.randint(3, 8), c, random.randint(3, 6), 0)
+        # Rauch-Wolke
+        for _ in range(5):
+            self._p(x + d*10, y, d*random.uniform(1, 4), random.uniform(-1.5, 0.5),
+                    random.randint(18, 30), (160, 160, 160), random.randint(5, 9), -0.02)
+
+    def spawn_blood(self, x, y, count=12):
+        for _ in range(count):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(1.5, 7)
+            c = random.choice([(200, 10, 10), (240, 30, 30), (160, 0, 0), (255, 60, 60)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 2, random.randint(18, 35), c, random.randint(2, 5))
+        # Blut-Spritzer (größere Tropfen)
+        for _ in range(4):
+            a = random.uniform(-math.pi, 0)
+            s = random.uniform(4, 10)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 3, random.randint(25, 45),
+                    (220, 20, 20), random.randint(4, 7), 0.3)
+
+    def spawn_death_explosion(self, x, y):
+        """Großer visueller Kill-Effekt für Bodentruppen."""
+        # Blut-Burst
+        for _ in range(20):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(3, 11)
+            c = random.choice([(220, 15, 15), (255, 40, 40), (180, 0, 0)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 3, random.randint(25, 50), c, random.randint(3, 6))
+        # Fleisch-Partikel (dunkler)
+        for _ in range(8):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(2, 7)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 4, random.randint(30, 55),
+                    (100, 20, 20), random.randint(5, 9), 0.2)
+        # Flash-Ring (weiß)
+        for i in range(16):
+            a = (i / 16) * 2 * math.pi
+            s = random.uniform(6, 12)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s, random.randint(4, 9),
+                    (255, 220, 200), random.randint(2, 4), 0)
+
+    def spawn_explosion(self, x, y, scale=1.0):
+        # Feuer-Kern
+        for _ in range(int(55 * scale)):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(2, 14*scale)
+            c = random.choice([(255, 220, 50), (255, 130, 20), (255, 70, 10), (255, 255, 150)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 3, random.randint(20, 50), c,
+                    random.randint(4, max(4, int(10*scale))), 0.25)
+        # Rauch
+        for _ in range(int(25 * scale)):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(0.5, 4)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 5, random.randint(40, 70),
+                    (80, 80, 80), random.randint(7, 14), -0.06)
+        # Funken
+        for _ in range(int(20 * scale)):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(5, 18*scale)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 4, random.randint(10, 25),
+                    (255, 255, 100), 2, 0.35)
+        # Debris-Stücke
+        for _ in range(int(12 * scale)):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(3, 9*scale)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 2, random.randint(30, 60),
+                    (60, 55, 50), random.randint(5, 10), 0.3)
+
+    def spawn_air_death(self, x, y):
+        """Luft-Einheit Abschuss — Feuer + Trümmer fallen."""
+        for _ in range(35):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(3, 13)
+            c = random.choice([(255, 200, 30), (255, 100, 10), (255, 50, 10)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 2, random.randint(25, 55), c,
+                    random.randint(3, 8), 0.3)
+        # Wrack-Teile fallen herunter
+        for _ in range(10):
+            self._p(x, y, random.uniform(-6, 6), random.uniform(-3, 2),
+                    random.randint(40, 80), (70, 70, 80), random.randint(5, 9), 0.4)
+        # Rauch-Spur
+        for _ in range(15):
+            self._p(x, y, random.uniform(-2, 2), random.uniform(-4, 0),
+                    random.randint(35, 65), (100, 100, 110), random.randint(6, 12), -0.04)
+
+    def spawn_tank_death(self, x, y):
+        """Tank-Explosion — massiv und langlebig."""
+        for _ in range(70):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(2, 18)
+            c = random.choice([(255, 220, 50), (255, 130, 20), (255, 60, 5), (200, 200, 200)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 4, random.randint(30, 70), c,
+                    random.randint(5, 13), 0.22)
+        # Panzer-Trümmer
+        for _ in range(18):
+            self._p(x, y, random.uniform(-12, 12), random.uniform(-18, -4),
+                    random.randint(50, 100), (50, 45, 40), random.randint(6, 12), 0.45)
+        # Dicke Rauchsäule
+        for _ in range(30):
+            self._p(x, y, random.uniform(-3, 3), random.uniform(-6, -1),
+                    random.randint(60, 100), (60, 60, 65), random.randint(10, 18), -0.08)
+
+    def spawn_bullet_impact(self, x, y, color=None):
+        """Kleiner Einschlag-Effekt wenn Kugel Wand/Boden trifft."""
+        c = color or (200, 180, 100)
+        for _ in range(6):
+            a = random.uniform(-math.pi, 0)
+            s = random.uniform(1, 5)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s, random.randint(6, 15), c, 2, 0.25)
+
+    def spawn_dust(self, x, y):
+        for _ in range(6):
+            self._p(x, y, random.uniform(-2.5, 2.5), random.uniform(-3.5, -1),
+                    random.randint(10, 22), (130, 110, 80), random.randint(3, 5))
+
+    def spawn_shell(self, x, y, d):
+        self._p(x, y, -d*random.uniform(2, 6), random.uniform(-5, -2),
+                random.randint(22, 40), (210, 190, 60), 3)
+
+    def spawn_sparks(self, x, y, count=10):
+        for _ in range(count):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(3, 10)
+            c = random.choice([(255, 220, 60), (255, 255, 120), (220, 220, 220)])
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s, random.randint(6, 18), c, 2, 0.3)
+
+    def spawn_smoke(self, x, y):
+        self._p(x, y, random.uniform(-1.2, 1.2), random.uniform(-2.5, -0.8),
+                random.randint(22, 45), (105, 105, 110), random.randint(5, 9), -0.02)
+
+    def spawn_pickup(self, x, y, color):
+        for _ in range(16):
+            a = random.uniform(0, 2*math.pi)
+            s = random.uniform(1.5, 6)
+            self._p(x, y, math.cos(a)*s, math.sin(a)*s - 2, random.randint(22, 40),
+                    color, random.randint(2, 5))
+        # Aufwärts-Burst
+        for _ in range(8):
+            self._p(x, y, random.uniform(-3, 3), random.uniform(-8, -3),
+                    random.randint(20, 35), (255, 255, 200), 3, 0.1)
+
+    def spawn_sniper_trail(self, x1, y1, x2, y2):
+        """Leuchtende Scharfschützen-Linie."""
+        steps = int(math.hypot(x2-x1, y2-y1) / 12)
+        for i in range(steps):
+            t = i / max(steps, 1)
+            px = x1 + (x2-x1)*t + random.uniform(-2, 2)
+            py = y1 + (y2-y1)*t + random.uniform(-2, 2)
+            self._p(px, py, random.uniform(-0.3, 0.3), random.uniform(-0.3, 0.3),
+                    random.randint(4, 10), (180, 240, 255), random.randint(2, 4), 0)
+
+    def spawn_shotgun_spread(self, x, y, d):
+        """Schrotflinte — breiter Mündungsstrahl."""
+        for _ in range(20):
+            a = random.uniform(-0.6, 0.6)
+            s = random.uniform(3, 8)
+            c = random.choice([(255, 240, 100), (255, 180, 40), (255, 255, 200)])
+            self._p(x, y, math.cos(a)*s*d, math.sin(a)*s, random.randint(3, 8), c, random.randint(2, 5), 0)
+
     def update(self):
-        self.particles=[p for p in self.particles if p.alive]
+        self.particles = [p for p in self.particles if p.alive]
         for p in self.particles: p.update()
-    def draw(self,surf,cam_x=0):
-        for p in self.particles: p.draw(surf,cam_x)
+
+    def draw(self, surf, cam_x=0):
+        for p in self.particles: p.draw(surf, cam_x)
 
 PARTICLES=ParticleSystem()
 screen_shake=0
 _spotlight_surf=pygame.Surface((WIDTH,HEIGHT),pygame.SRCALPHA)
+
+# ═══════════════════════════════════════════════════
+#  KILL FLASH & HIT NUMBERS
+# ═══════════════════════════════════════════════════
+class KillFlash:
+    """Weißer Screen-Flash bei Kill."""
+    def __init__(self): self.timer = 0; self.intensity = 0
+
+    def trigger(self, intensity=60):
+        self.timer = intensity
+        self.intensity = intensity
+
+    def update(self): 
+        if self.timer > 0: self.timer -= 2
+
+    def draw(self, surf):
+        if self.timer <= 0: return
+        a = int(min(120, self.timer * 2.5))
+        s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        s.fill((255, 255, 255, a))
+        surf.blit(s, (0, 0))
+
+KILL_FLASH = KillFlash()
+
+class DamageNumber:
+    """Aufsteigende Schadensanzeige über dem Feind."""
+    __slots__ = ("x", "y", "vy", "value", "life", "max_life", "color", "is_kill", "font")
+    def __init__(self, x, y, value, is_kill=False):
+        self.x = float(x) + random.uniform(-20, 20)
+        self.y = float(y) - 20
+        self.vy = -2.5
+        self.value = value
+        self.is_kill = is_kill
+        self.life = 70 if not is_kill else 100
+        self.max_life = self.life
+        size = 26 if is_kill else 18
+        self.color = (255, 60, 60) if is_kill else (255, 220, 80)
+        self.font = pygame.font.SysFont("consolas", size, bold=True)
+
+    def update(self):
+        self.y += self.vy
+        self.vy *= 0.92
+        self.life -= 1
+
+    def draw(self, surf, cam_x=0):
+        if self.life <= 0: return
+        alpha = int(255 * self.life / self.max_life)
+        label = f"KILL! -{self.value}" if self.is_kill else f"-{self.value}"
+        t = self.font.render(label, True, self.color)
+        ts = pygame.Surface((t.get_width() + 4, t.get_height() + 2), pygame.SRCALPHA)
+        if self.is_kill:
+            # Schwarzer Schatten
+            shadow = self.font.render(label, True, (0, 0, 0))
+            ts.blit(shadow, (4, 3))
+        ts.blit(t, (2, 1))
+        ts.set_alpha(alpha)
+        surf.blit(ts, (int(self.x) - cam_x - ts.get_width()//2, int(self.y)))
+
+    @property
+    def alive(self): return self.life > 0
+
+class DamageNumbers:
+    def __init__(self): self.numbers = []
+
+    def add(self, x, y, value, is_kill=False):
+        self.numbers.append(DamageNumber(x, y, value, is_kill))
+
+    def update(self): 
+        self.numbers = [n for n in self.numbers if n.alive]
+        for n in self.numbers: n.update()
+
+    def draw(self, surf, cam_x=0):
+        for n in self.numbers: n.draw(surf, cam_x)
+
+DMG_NUMBERS = DamageNumbers()
+
+# ═══════════════════════════════════════════════════
+#  ZONE CLEAR EFFEKT
+# ═══════════════════════════════════════════════════
+class ZoneClearEffect:
+    def __init__(self):
+        self.active = False
+        self.timer = 0
+        self.particles = []
+
+    def trigger(self):
+        self.active = True
+        self.timer = 180
+        self.particles = []
+        for _ in range(80):
+            self.particles.append({
+                "x": random.randint(0, WIDTH),
+                "y": random.randint(-50, HEIGHT // 2),
+                "vx": random.uniform(-2, 2),
+                "vy": random.uniform(2, 7),
+                "color": random.choice([
+                    (255, 220, 50), (50, 220, 80), (50, 180, 255),
+                    (255, 80, 80), (200, 80, 255), (255, 255, 255)
+                ]),
+                "size": random.randint(4, 10),
+                "rot": random.uniform(0, 360),
+                "rot_speed": random.uniform(-8, 8),
+            })
+
+    def update(self):
+        if not self.active: return
+        self.timer -= 1
+        if self.timer <= 0:
+            self.active = False; return
+        for p in self.particles:
+            p["x"] += p["vx"]; p["y"] += p["vy"]
+            p["vy"] += 0.1; p["rot"] += p["rot_speed"]
+            if p["y"] > HEIGHT + 20:
+                p["y"] = -10; p["x"] = random.randint(0, WIDTH)
+
+    def draw(self, surf):
+        if not self.active: return
+        alpha = min(255, self.timer * 3)
+        # "ZONE BEFREIT!" Banner
+        if self.timer > 60:
+            f = pygame.font.SysFont("consolas", 54, bold=True)
+            txt = f.render("ZONE BEFREIT!", True, YELLOW)
+            shadow = f.render("ZONE BEFREIT!", True, (80, 60, 0))
+            scale = 1.0 + abs(math.sin(pygame.time.get_ticks() * 0.005)) * 0.05
+            scaled = pygame.transform.scale(txt,
+                (int(txt.get_width()*scale), int(txt.get_height()*scale)))
+            s_scaled = pygame.transform.scale(shadow,
+                (int(shadow.get_width()*scale), int(shadow.get_height()*scale)))
+            bx = WIDTH//2 - scaled.get_width()//2
+            by = HEIGHT//2 - 80
+            ss = pygame.Surface((scaled.get_width()+20, scaled.get_height()+12), pygame.SRCALPHA)
+            ss.fill((0, 0, 0, 140))
+            surf.blit(ss, (bx - 10, by - 6))
+            surf.blit(s_scaled, (bx + 3, by + 3))
+            surf.blit(scaled, (bx, by))
+        # Konfetti
+        for p in self.particles:
+            s = pygame.Surface((p["size"], p["size"]//2 + 2), pygame.SRCALPHA)
+            s.fill((*p["color"], int(alpha * 0.9)))
+            rotated = pygame.transform.rotate(s, p["rot"])
+            surf.blit(rotated, (int(p["x"]) - rotated.get_width()//2,
+                                int(p["y"]) - rotated.get_height()//2))
+
+ZONE_CLEAR_FX = ZoneClearEffect()
+
+# ═══════════════════════════════════════════════════
+#  VIGNETTE / DAMAGE OVERLAY
+# ═══════════════════════════════════════════════════
+_vignette_surf = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+
+def draw_vignette(surf, player):
+    """Rote Vignette bei wenig HP, pulsierend."""
+    hp_ratio = player.hp / player.MAX_HP
+    if hp_ratio > 0.4: return
+    intensity = int((0.4 - hp_ratio) / 0.4 * 160)
+    pulse = abs(math.sin(pygame.time.get_ticks() * 0.004)) * 40
+    a = min(200, intensity + int(pulse))
+    _vignette_surf.fill((0, 0, 0, 0))
+    # Vignette: Rand dunkel, Mitte transparent
+    for r_step in range(8):
+        r_frac = r_step / 8
+        rad_x = int(WIDTH * (0.5 + r_frac * 0.5))
+        rad_y = int(HEIGHT * (0.5 + r_frac * 0.5))
+        layer_a = int(a * r_frac * 0.4)
+        layer = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        layer.fill((0, 0, 0, 0))
+        # Rote Ränder
+        pygame.draw.rect(layer, (180, 0, 0, layer_a),
+                         (0, 0, WIDTH - rad_x, HEIGHT))
+        pygame.draw.rect(layer, (180, 0, 0, layer_a),
+                         (rad_x, 0, WIDTH - rad_x, HEIGHT))
+        pygame.draw.rect(layer, (180, 0, 0, layer_a),
+                         (0, 0, WIDTH, HEIGHT - rad_y))
+        pygame.draw.rect(layer, (180, 0, 0, layer_a),
+                         (0, rad_y, WIDTH, HEIGHT - rad_y))
+        surf.blit(layer, (0, 0))
 
 # ═══════════════════════════════════════════════════
 #  POWER-UPS
@@ -698,9 +1013,10 @@ class Weapon:
         wdmg=int(self.damage*dmg_mult*WSTATS.get_dmg_mult(self.name))
         if self.is_shotgun:
             for _ in range(8):
-                angle=math.atan2(dy,dx)+random.uniform(-0.3,0.3)
-                results.append(Bullet(ox,oy,math.cos(angle)*self.bullet_speed,math.sin(angle)*self.bullet_speed,wdmg,self.color))
-            PARTICLES.spawn_muzzle_flash(ox+(1 if dx>0 else -1)*16,oy,1 if dx>0 else -1)
+                angle = math.atan2(dy, dx) + random.uniform(-0.3, 0.3)
+                results.append(Bullet(ox, oy, math.cos(angle)*self.bullet_speed,
+                                      math.sin(angle)*self.bullet_speed, wdmg, self.color))
+            PARTICLES.spawn_shotgun_spread(ox + (1 if dx > 0 else -1)*16, oy, 1 if dx > 0 else -1)
         elif self.is_rocket or self.is_stinger:
             vx=dx/dist*self.bullet_speed;vy=dy/dist*self.bullet_speed
             results.append(Rocket(ox,oy,vx,vy,wdmg,self.color,is_stinger=self.is_stinger))
@@ -718,6 +1034,21 @@ SCHROTFLINTE   = Weapon("Schrotflinte",   18,  800, 16, YELLOW,     auto=False, 
 RAKETENWERFER  = Weapon("Raketenwerfer",  120,1500, 12, ROCKET_COL, auto=False, is_rocket=True,  ammo=6, sound=SFX.shoot_rocket)
 STINGER        = Weapon("Stinger AA",     150,2000, 16, CYAN,       auto=False, is_stinger=True, ammo=4, sound=SFX.shoot_stinger)
 MESSER         = Weapon("Messer",         35,  400,  0, RED,        auto=False, is_knife=True,   sound=SFX.knife_slash)
+# ── Unterwasser-Waffen ──────────────────
+SPEERGUN    = Weapon("Speergun",    45,  900, 16, SPEAR_COL,
+                     auto=False, sound=SFX.shoot_sniper)
+TORPEDO_W   = Weapon("Torpedo",    100, 2000, 10, TORPEDO_COL,
+                     auto=False, is_rocket=True, ammo=4,
+                     sound=SFX.shoot_rocket)
+
+# ── Luft-Waffen ─────────────────────────
+BORDKANONE  = Weapon("Bordkanone",  20,   80, 22, YELLOW,
+                     auto=True,  sound=SFX.shoot_rifle)
+LUFTRAKETE  = Weapon("Luftrakete", 130, 1800, 14, ROCKET_COL,
+                     auto=False, is_rocket=True, ammo=5,
+                     sound=SFX.shoot_rocket)
+LUFTBOMBE   = Weapon("Luftbombe",   80, 2500,  0, ORANGE,
+                     auto=False, ammo=3, sound=SFX.shoot_rocket)
 
 # ═══════════════════════════════════════════════════
 #  PROJEKTILE
@@ -730,9 +1061,45 @@ class Bullet:
     def update(self):
         self.x+=self.vx;self.y+=self.vy
         if self.x<-200 or self.x>WORLD_WIDTH+200 or self.y<-300 or self.y>HEIGHT+100: self.alive=False
-    def draw(self,surf,cam_x=0):
-        r=7 if self.is_sniper else self.RADIUS
-        pygame.draw.circle(surf,self.color,(int(self.x)-cam_x,int(self.y)),r)
+    def draw(self, surf, cam_x=0):
+        sx = int(self.x) - cam_x
+        sy = int(self.y)
+        if self.is_sniper:
+            # Leuchtende Linie + Kern
+            for i in range(3):
+                alpha_surf = pygame.Surface((22, 22), pygame.SRCALPHA)
+                pygame.draw.circle(alpha_surf, (180, 240, 255, 80 - i*25), (11, 11), 7 + i*3)
+                surf.blit(alpha_surf, (sx - 11, sy - 11))
+            pygame.draw.circle(surf, (255, 255, 255), (sx, sy), 5)
+            pygame.draw.circle(surf, SNIPER_COL, (sx, sy), 3)
+            # Schweif
+            tail_len = 28
+            angle = math.atan2(self.vy, self.vx)
+            for i in range(6):
+                t = i / 6
+                tx = int(sx - math.cos(angle) * tail_len * t)
+                ty = int(sy - math.sin(angle) * tail_len * t)
+                r = max(1, int(4 * (1 - t)))
+                a_val = int(200 * (1 - t))
+                ts = pygame.Surface((r*2+2, r*2+2), pygame.SRCALPHA)
+                pygame.draw.circle(ts, (*SNIPER_COL, a_val), (r+1, r+1), r)
+                surf.blit(ts, (tx - r - 1, ty - r - 1))
+        else:
+            # Normaler Bullet: Glow + Kern
+            glow = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (*self.color, 60), (10, 10), 9)
+            surf.blit(glow, (sx - 10, sy - 10))
+            pygame.draw.circle(surf, self.color, (sx, sy), self.RADIUS)
+            pygame.draw.circle(surf, (255, 255, 220), (sx, sy), max(1, self.RADIUS - 2))
+            # Kurzer Schweif
+            angle = math.atan2(self.vy, self.vx)
+            tail = pygame.Surface((18, 8), pygame.SRCALPHA)
+            pygame.draw.polygon(tail, (*self.color, 120),
+                                [(18, 4), (10, 1), (0, 4), (10, 7)])
+            rotated = pygame.transform.rotate(tail,
+                                              -math.degrees(angle))
+            surf.blit(rotated, (sx - rotated.get_width()//2,
+                                sy - rotated.get_height()//2))
     def get_rect(self):
         r=7 if self.is_sniper else self.RADIUS
         return pygame.Rect(self.x-r,self.y-r,r*2,r*2)
@@ -766,12 +1133,38 @@ class Rocket:
             d=math.hypot(t.x-self.x,t.y-self.y)
             if d<=self.explosion_r: hits.append((t,int(self.damage*(1-d/self.explosion_r))))
         return hits
-    def draw(self,surf,cam_x=0):
-        sx=int(self.x)-cam_x;sy=int(self.y)
-        angle=math.atan2(self.vy,self.vx)
-        col=CYAN if self.is_stinger else ROCKET_COL
-        pygame.draw.circle(surf,col,(sx,sy),self.RADIUS)
-        pygame.draw.line(surf,(255,200,50),(sx,sy),(int(sx-math.cos(angle)*18),int(sy-math.sin(angle)*18)),3)
+    def draw(self, surf, cam_x=0):
+        sx = int(self.x) - cam_x
+        sy = int(self.y)
+        angle = math.atan2(self.vy, self.vx)
+        col = CYAN if self.is_stinger else ROCKET_COL
+
+        # Glüh-Aura
+        aura = pygame.Surface((40, 40), pygame.SRCALPHA)
+        pygame.draw.circle(aura, (*col, 45), (20, 20), 18)
+        surf.blit(aura, (sx - 20, sy - 20))
+
+        # Raketen-Körper (rotiert)
+        body_surf = pygame.Surface((28, 10), pygame.SRCALPHA)
+        pygame.draw.ellipse(body_surf, col, (0, 1, 24, 8))
+        pygame.draw.polygon(body_surf, (255, 255, 200), [(24, 4), (28, 4), (24, 2)])
+        rotated = pygame.transform.rotate(body_surf, -math.degrees(angle))
+        surf.blit(rotated, (sx - rotated.get_width()//2,
+                            sy - rotated.get_height()//2))
+
+        # Feuerschweif
+        tail_x = sx - math.cos(angle) * 14
+        tail_y = sy - math.sin(angle) * 14
+        for i in range(8):
+            t = i / 8
+            px = int(tail_x - math.cos(angle) * 22 * t)
+            py = int(tail_y - math.sin(angle) * 22 * t)
+            r = max(1, int(6 * (1 - t)))
+            fire_col = [(255, 240, 100), (255, 160, 30), (255, 80, 10),
+                        (200, 50, 10), (120, 30, 5), (80, 20, 0), (40, 10, 0), (20, 5, 0)][i]
+            fs = pygame.Surface((r*2+2, r*2+2), pygame.SRCALPHA)
+            pygame.draw.circle(fs, (*fire_col, int(220*(1-t))), (r+1, r+1), r)
+            surf.blit(fs, (px - r - 1, py - r - 1))
     def get_rect(self):
         return pygame.Rect(self.x-self.RADIUS,self.y-self.RADIUS,self.RADIUS*2,self.RADIUS*2)
 
@@ -806,11 +1199,40 @@ class Grenade:
                 self.hits_in_explosion+=1
         if self.hits_in_explosion>=3: unlock("grenade_multi")
         return hits
-    def draw(self,surf,cam_x=0):
-        sx=int(self.x)-cam_x
+    def draw(self, surf, cam_x=0):
+        sx = int(self.x) - cam_x
+        sy = int(self.y)
         if not self.exploded:
-            pygame.draw.circle(surf,GRENADE_COL,(sx,int(self.y)),self.RADIUS)
-            if (pygame.time.get_ticks()//200)%2==0: pygame.draw.circle(surf,RED,(sx,int(self.y)),3)
+            # Schatten
+            shadow = pygame.Surface((20, 6), pygame.SRCALPHA)
+            pygame.draw.ellipse(shadow, (0, 0, 0, 60), (0, 0, 20, 6))
+            surf.blit(shadow, (sx - 10, sy + self.RADIUS))
+            # Granaten-Körper
+            pygame.draw.circle(surf, GRENADE_COL, (sx, sy), self.RADIUS)
+            pygame.draw.circle(surf, (120, 200, 120), (sx, sy), self.RADIUS, 1)
+            # Zünder-Indikator: wird schneller rot je näher Explosion
+            fuse_ratio = (pygame.time.get_ticks() - self.spawn) / self.FUSE_MS
+            blink_rate = int(6 + fuse_ratio * 20)  # schneller blinken
+            if (pygame.time.get_ticks() // blink_rate) % 2 == 0:
+                pygame.draw.circle(surf, (255, 50 + int(fuse_ratio*200), 50), (sx, sy), 4)
+            # Rauchspur wenn in Bewegung
+            if abs(self.vx) > 1 or abs(self.vy) > 1:
+                for i in range(3):
+                    tx = sx - int(self.vx * i * 1.5)
+                    ty = sy - int(self.vy * i * 1.5)
+                    a = 80 - i * 25
+                    ts = pygame.Surface((8, 8), pygame.SRCALPHA)
+                    pygame.draw.circle(ts, (150, 150, 150, a), (4, 4), 4 - i)
+                    surf.blit(ts, (tx - 4, ty - 4))
+        elif self.exploded:
+            # Explosions-Ring
+            age = pygame.time.get_ticks() - self.explode_time
+            r = int(age * 0.35)
+            if r < 80:
+                ring = pygame.Surface((r*2+4, r*2+4), pygame.SRCALPHA)
+                alpha = max(0, 180 - int(age * 0.5))
+                pygame.draw.circle(ring, (255, 180, 50, alpha), (r+2, r+2), r, 3)
+                surf.blit(ring, (sx - r - 2, sy - r - 2))
 
 # ═══════════════════════════════════════════════════
 #  ZONEN
@@ -1172,30 +1594,48 @@ class Enemy:
             self._shoot_at(player,bullets)
             if dist<120: self._move_toward(self.x-self.facing*50,self.speed*0.8)
         self.x=max(0,min(WORLD_WIDTH-self.W,self.x))
-    def take_damage(self,amount):
-        self.hp-=amount;SFX.play(SFX.hit_enemy)
-        PARTICLES.spawn_blood(self.rect.centerx,self.rect.centery)
-        if self.hp<=0:
-            self.alive=False;PARTICLES.spawn_blood(self.rect.centerx,self.rect.centery,20)
-    def draw(self,surf,cam_x=0):
-        sx=int(self.x)-cam_x;cx=sx+self.W//2;cy=int(self.y);f=self.facing
-        sc={self.ST_PATROL:(150,150,150),self.ST_CHASE:(240,120,20),
-            self.ST_SHOOT:(220,50,50),self.ST_FLANK:(200,50,200)}.get(self.state,(200,200,200))
-        pygame.draw.circle(surf,sc,(cx,cy-18),4)
-        bc=(120,50,40)
-        pygame.draw.circle(surf,(190,140,100),(cx,cy+10),9)
-        pygame.draw.rect(surf,(80,30,30),pygame.Rect(cx-10,cy+4,20,14))
-        pygame.draw.rect(surf,bc,pygame.Rect(cx-9,cy+19,18,18))
-        lo=[0,5,0,-5][self.walk_frame]
-        pygame.draw.line(surf,bc,(cx-4,cy+37),(cx-4,cy+52+lo),5)
-        pygame.draw.line(surf,bc,(cx+4,cy+37),(cx+4,cy+52-lo),5)
-        pygame.draw.line(surf,bc,(cx,cy+21),(cx+f*16,cy+27),4)
-        pygame.draw.rect(surf,(50,50,50),pygame.Rect(cx+f*8,cy+24,14,4))
-        bw=40;bx=cx-bw//2;by=cy-10
-        pygame.draw.rect(surf,DARK,(bx,by,bw,5))
-        hp_r=self.hp/self.max_hp
-        hc=(50,200,80) if hp_r>0.6 else YELLOW if hp_r>0.3 else RED
-        pygame.draw.rect(surf,hc,(bx,by,int(bw*hp_r),5))
+    def take_damage(self, amount):
+        self.hp -= amount
+        SFX.play(SFX.hit_enemy)
+        PARTICLES.spawn_blood(self.rect.centerx, self.rect.centery)
+        if self.hp <= 0:
+            self.alive = False
+            PARTICLES.spawn_death_explosion(self.rect.centerx, self.rect.centery)
+    def draw(self, surf, cam_x=0):
+        sx = int(self.x) - cam_x; cx = sx + self.W//2; cy = int(self.y); f = self.facing
+        # Schatten
+        shadow = pygame.Surface((self.W + 8, 6), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, 60), (0, 0, self.W + 8, 6))
+        surf.blit(shadow, (cx - self.W//2 - 4, cy + self.H - 2))
+        # State-Indikator (Icon über Kopf)
+        state_icons = {
+            self.ST_PATROL: ("·", (150, 150, 150)),
+            self.ST_CHASE:  ("!", (240, 120, 20)),
+            self.ST_SHOOT:  ("✕", (220, 50, 50)),
+            self.ST_FLANK:  ("?", (200, 50, 200)),
+        }
+        icon, icol = state_icons.get(self.state, ("·", GRAY))
+        if self.state != self.ST_PATROL:
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.01)) * 3
+            if_surf = pygame.font.SysFont("consolas", 14, bold=True).render(icon, True, icol)
+            surf.blit(if_surf, (cx - if_surf.get_width()//2, cy - 22 - int(pulse)))
+        bc = (120, 50, 40)
+        pygame.draw.circle(surf, (190, 140, 100), (cx, cy + 10), 9)
+        pygame.draw.rect(surf, (80, 30, 30), pygame.Rect(cx-10, cy+4, 20, 14))
+        pygame.draw.rect(surf, bc, pygame.Rect(cx-9, cy+19, 18, 18))
+        lo = [0, 5, 0, -5][self.walk_frame]
+        pygame.draw.line(surf, bc, (cx-4, cy+37), (cx-4, cy+52+lo), 5)
+        pygame.draw.line(surf, bc, (cx+4, cy+37), (cx+4, cy+52-lo), 5)
+        pygame.draw.line(surf, bc, (cx, cy+21), (cx+f*16, cy+27), 4)
+        pygame.draw.rect(surf, (50, 50, 50), pygame.Rect(cx+f*8, cy+24, 14, 4))
+        # HP-Leiste
+        bw = 40; bx = cx - bw//2; by = cy - 10
+        pygame.draw.rect(surf, DARK, (bx, by, bw, 5))
+        hp_r = self.hp / self.max_hp
+        hc = (50, 200, 80) if hp_r > 0.6 else YELLOW if hp_r > 0.3 else RED
+        pygame.draw.rect(surf, hc, (bx, by, int(bw * hp_r), 5))
+        # Shine
+        pygame.draw.rect(surf, (255, 255, 255, 60), (bx, by, int(bw * hp_r), 2))
 
 # ═══════════════════════════════════════════════════
 #  JETPACK / TANK / DRONE / HELI / JET / BOSS
@@ -1318,9 +1758,15 @@ class Drone:
             dmg=int(8*get_diff()["enemy_dmg_mult"])
             bullets.append(Bullet(ox,oy,math.cos(angle)*10,math.sin(angle)*10,dmg,(255,100,100)))
             SFX.play(SFX.shoot_pistol)
-    def take_damage(self,amount,is_rocket=False):
-        self.hp-=amount;SFX.play(SFX.hit_enemy);PARTICLES.spawn_sparks(self.rect.centerx,self.rect.centery,4)
-        if self.hp<=0: self.alive=False;PARTICLES.spawn_explosion(self.rect.centerx,self.rect.centery,scale=0.8)
+    def take_damage(self, amount, is_rocket=False):
+        dmg = amount if is_rocket else max(1, amount // 4)
+        self.hp -= dmg
+        SFX.play(SFX.hit_enemy)
+        PARTICLES.spawn_sparks(self.rect.centerx, self.rect.centery, 8)
+        if self.hp <= 0:
+            self.alive = False
+            PARTICLES.spawn_tank_death(self.rect.centerx, self.rect.centery)
+            SFX.play(SFX.big_explosion)
     def draw(self,surf,cam_x=0):
         sx=int(self.x)-cam_x;cx=sx+self.W//2;cy=int(self.y)+self.H//2
         pygame.draw.rect(surf,(60,60,80),pygame.Rect(sx+8,cy-6,20,12),border_radius=4)
@@ -1357,11 +1803,14 @@ class Helicopter:
             for i in range(3):
                 angle=math.atan2(player.rect.centery-oy,player.rect.centerx-ox)+random.uniform(-0.15,0.15)
                 bullets.append(Bullet(ox,oy,math.cos(angle)*13,math.sin(angle)*13,dmg,(255,150,50)))
-    def take_damage(self,amount,is_rocket=False):
-        dmg=amount if is_rocket else max(1,amount//3)
-        self.hp-=dmg;SFX.play(SFX.hit_enemy);PARTICLES.spawn_sparks(self.rect.centerx,self.rect.centery,8)
-        if self.hp<=0:
-            self.alive=False;PARTICLES.spawn_explosion(self.rect.centerx,self.rect.centery,scale=1.8)
+    def take_damage(self, amount, is_rocket=False):
+        dmg = amount if is_rocket else max(1, amount // 3)
+        self.hp -= dmg
+        SFX.play(SFX.hit_enemy)
+        PARTICLES.spawn_sparks(self.rect.centerx, self.rect.centery, 8)
+        if self.hp <= 0:
+            self.alive = False
+            PARTICLES.spawn_air_death(self.rect.centerx, self.rect.centery)
             SFX.play(SFX.big_explosion)
     def draw(self,surf,cam_x=0):
         sx=int(self.x)-cam_x;cx=sx+self.W//2;cy=int(self.y)+self.H//2
@@ -1481,11 +1930,13 @@ class Boss:
                 angle=math.atan2(dy2,dx2)+off
                 bullets.append(Bullet(ox,oy+i*8-spread*4,math.cos(angle)*13,math.sin(angle)*13,dmg,(255,80,80)))
                 PARTICLES.spawn_muzzle_flash(ox+self.facing*25,oy,self.facing)
-    def take_damage(self,amount):
-        self.hp-=amount;PARTICLES.spawn_blood(self.rect.centerx,self.rect.centery,6)
-        if self.hp<=0:
-            self.alive=False;PARTICLES.spawn_explosion(self.rect.centerx,self.rect.centery,scale=3.0)
-            SFX.play(SFX.big_explosion)
+    def take_damage(self, amount):
+        self.hp -= amount
+        SFX.play(SFX.hit_enemy)
+        PARTICLES.spawn_blood(self.rect.centerx, self.rect.centery)
+        if self.hp <= 0:
+            self.alive = False
+            PARTICLES.spawn_death_explosion(self.rect.centerx, self.rect.centery)
     def draw(self,surf,cam_x=0):
         sx=int(self.x)-cam_x;cx=sx+self.W//2;cy=int(self.y);f=self.facing
         pc={1:(140,40,40),2:(180,30,30),3:(220,20,20)}.get(self.phase,(140,40,40))
@@ -1552,58 +2003,137 @@ def draw_weapon_xp_bar(surf, weapon):
     f=pygame.font.SysFont("consolas",9)
     surf.blit(f.render(label,True,GRAY),(bx,by-10))
 
-def draw_hud(surf,player,zone_num,zone_name,enemies_left,air_left):
-    panel=pygame.Surface((430,132),pygame.SRCALPHA);panel.fill((0,0,0,160))
-    surf.blit(panel,(8,8))
+def draw_hud(surf, player, zone_num, zone_name, enemies_left, air_left):
+    tick = pygame.time.get_ticks()
+
+    # ── Haupt-Panel ──
+    panel = pygame.Surface((440, 140), pygame.SRCALPHA)
+    panel.fill((0, 0, 0, 170))
+    pygame.draw.rect(panel, (80, 20, 20), (0, 0, 440, 140), 1, border_radius=4)
+    surf.blit(panel, (6, 6))
+
+    # ── Leben (Herzen animiert) ──
     for i in range(player.MAX_LIVES):
-        col=RED if i<player.lives else (50,20,20)
-        pygame.draw.circle(surf,col,(28+i*28,28),9);pygame.draw.circle(surf,col,(40+i*28,28),9)
-        pygame.draw.polygon(surf,col,[(20+i*28,32),(48+i*28,32),(34+i*28,47)])
-    pygame.draw.rect(surf,DARK,(14,52,200,14))
-    hr=player.hp/player.MAX_HP;hc=GREEN if hr>0.5 else YELLOW if hr>0.25 else RED
-    pygame.draw.rect(surf,hc,(14,52,int(200*hr),14));pygame.draw.rect(surf,GRAY,(14,52,200,14),1)
-    surf.blit(font_tiny.render(f"HP {player.hp}/{player.MAX_HP}",True,WHITE),(220,53))
-    if player.shield_timer>0:
-        sw=int(200*player.shield_timer/1800)
-        pygame.draw.rect(surf,(40,80,150),(14,68,200,6))
-        pygame.draw.rect(surf,(80,160,255),(14,68,sw,6))
-        surf.blit(font_tiny.render("SCHILD",True,(80,160,255)),(220,67))
-    weapons_row1=[(PISTOLE,"[1]"),(STURMGEWEHR,"[2]"),(SCHARFSCHUETZE,"[3]"),(SCHROTFLINTE,"[4]")]
-    weapons_row2=[(RAKETENWERFER,"[5]"),(STINGER,"[6]"),(MESSER,"[7]")]
-    for i,(w,label) in enumerate(weapons_row1):
-        col=YELLOW if player.weapon==w else GRAY
-        ammo_str=f"({w.ammo})" if w.ammo is not None else ""
-        lv_str=f"Lv{WSTATS.get_level(w.name)}" if WSTATS.get_level(w.name)>0 else ""
-        surf.blit(font_tiny.render(f"{label}{w.name[:7]}{ammo_str}{lv_str}",True,col),(14+i*100,78))
-    for i,(w,label) in enumerate(weapons_row2):
-        col=YELLOW if player.weapon==w else GRAY
-        ammo_str=f"({w.ammo})" if w.ammo is not None else ""
-        surf.blit(font_tiny.render(f"{label}{w.name[:10]}{ammo_str}",True,col),(14+i*130,92))
-    surf.blit(font_tiny.render(f"Granaten: {'X '*player.grenades}",True,ORANGE),(14,108))
-    boosts=[]
-    if player.speed_boost_timer>0: boosts.append(("SPEED",(200,100,255)))
-    if player.dmg_boost_timer>0:   boosts.append(("2xDMG",(255,120,20)))
-    for i,(b,bc) in enumerate(boosts):
-        surf.blit(font_tiny.render(b,True,bc),(220+i*60,78))
-    sc=font_med.render(f"SCORE: {player.score}",True,YELLOW)
-    surf.blit(sc,(WIDTH//2-sc.get_width()//2,14))
-    # Schwierigkeitsgrad-Anzeige
-    diff_cfg=get_diff()
-    df=font_tiny.render(diff_cfg["label"],True,diff_cfg["color"])
-    surf.blit(df,(WIDTH//2-df.get_width()//2,34))
-    zt=font_small.render(f"ZONE {zone_num}/{NUM_ZONES}",True,WHITE)
-    nt=font_tiny.render(zone_name,True,GRAY)
-    et=font_tiny.render(f"Boden: {enemies_left}",True,(255,150,150))
-    at=font_tiny.render(f"Luft:  {air_left}",True,CYAN)
-    surf.blit(zt,(WIDTH-zt.get_width()-14,14));surf.blit(nt,(WIDTH-nt.get_width()-14,38))
-    surf.blit(et,(WIDTH-et.get_width()-14,56));surf.blit(at,(WIDTH-at.get_width()-14,72))
-    draw_weapon_xp_bar(surf,player.weapon)
-    if player.pickup_msg_timer>0:
-        alpha=min(255,player.pickup_msg_timer*4)
-        pm=font_med.render(f"+ {player.pickup_msg}",True,YELLOW)
-        ps=pygame.Surface((pm.get_width()+20,pm.get_height()+10),pygame.SRCALPHA)
-        ps.fill((0,0,0,100));ps.blit(pm,(10,5));ps.set_alpha(alpha)
-        surf.blit(ps,(WIDTH//2-ps.get_width()//2,HEIGHT//2-80))
+        alive = i < player.lives
+        col = RED if alive else (40, 15, 15)
+        pulse = abs(math.sin(tick * 0.008)) * 2 if alive and player.lives == 1 else 0
+        r = int(9 + pulse)
+        pygame.draw.circle(surf, col, (26 + i * 30, 26), r)
+        pygame.draw.circle(surf, col, (38 + i * 30, 26), r)
+        pygame.draw.polygon(surf, col, [(18 + i*30, 30), (46 + i*30, 30), (32 + i*30, 45 + int(pulse))])
+
+    # ── HP-Leiste mit Puls bei niedrig ──
+    hp_ratio = player.hp / player.MAX_HP
+    hc = GREEN if hp_ratio > 0.5 else YELLOW if hp_ratio > 0.25 else RED
+    if hp_ratio < 0.25 and (tick // 200) % 2 == 0:
+        hc = (255, 80, 80)  # Warnung blinkt
+    pygame.draw.rect(surf, (15, 15, 15), (14, 52, 202, 16), border_radius=4)
+    pygame.draw.rect(surf, (40, 40, 40), (14, 52, 202, 16), border_radius=4)
+    if hp_ratio > 0:
+        pygame.draw.rect(surf, hc, (14, 52, int(200 * hp_ratio), 16), border_radius=4)
+    # Schimmer auf HP-Leiste
+    shine = pygame.Surface((int(200 * hp_ratio), 5), pygame.SRCALPHA)
+    shine.fill((255, 255, 255, 30))
+    surf.blit(shine, (14, 52))
+    pygame.draw.rect(surf, GRAY, (14, 52, 202, 16), 1, border_radius=4)
+    surf.blit(font_tiny.render(f"HP {player.hp}/{player.MAX_HP}", True, WHITE), (222, 55))
+
+    # ── Schild-Leiste ──
+    if player.shield_timer > 0:
+        sw = int(200 * player.shield_timer / 1800)
+        pygame.draw.rect(surf, (20, 40, 80), (14, 70, 200, 7), border_radius=3)
+        pygame.draw.rect(surf, (80, 160, 255), (14, 70, sw, 7), border_radius=3)
+        surf.blit(font_tiny.render("SCHILD", True, (80, 160, 255)), (222, 69))
+
+    # ── Waffen-Zeilen ──
+    weapons_row1 = [(PISTOLE,"[1]"),(STURMGEWEHR,"[2]"),(SCHARFSCHUETZE,"[3]"),(SCHROTFLINTE,"[4]")]
+    weapons_row2 = [(RAKETENWERFER,"[5]"),(STINGER,"[6]"),(MESSER,"[7]")]
+    for i, (w, label) in enumerate(weapons_row1):
+        active = player.weapon == w
+        col = YELLOW if active else (100, 100, 100)
+        ammo_str = f"({w.ammo})" if w.ammo is not None else ""
+        lv = WSTATS.get_level(w.name)
+        lv_col = [(80,200,80),(120,200,255),(255,200,50),(255,80,80)][lv]
+        lv_str = f"★{lv}" if lv > 0 else ""
+        if active:
+            # Aktive Waffe hervorheben
+            pygame.draw.rect(surf, (60, 30, 10), (13 + i*102, 78, 100, 14), border_radius=3)
+        txt = font_tiny.render(f"{label}{w.name[:6]}{ammo_str}", True, col)
+        surf.blit(txt, (14 + i * 102, 79))
+        if lv_str:
+            lt = pygame.font.SysFont("consolas", 9, bold=True).render(lv_str, True, lv_col)
+            surf.blit(lt, (14 + i*102 + 68, 80))
+    for i, (w, label) in enumerate(weapons_row2):
+        active = player.weapon == w
+        col = YELLOW if active else (100, 100, 100)
+        ammo_str = f"({w.ammo})" if w.ammo is not None else ""
+        if w.ammo is not None and w.ammo == 0:
+            col = RED  # Leer = rot
+        if active:
+            pygame.draw.rect(surf, (60, 30, 10), (13 + i*132, 94, 130, 14), border_radius=3)
+        surf.blit(font_tiny.render(f"{label}{w.name[:9]}{ammo_str}", True, col), (14 + i * 132, 95))
+
+    # ── Granaten als Icons ──
+    for i in range(player.GRENADES):
+        has = i < player.grenades
+        gc = ORANGE if has else (40, 20, 10)
+        gx = 14 + i * 18; gy = 111
+        pygame.draw.circle(surf, gc, (gx + 5, gy + 5), 5)
+        if has:
+            pygame.draw.circle(surf, (255, 180, 80), (gx + 5, gy + 5), 5, 1)
+
+    # ── Boost-Indikatoren ──
+    boosts = []
+    if player.speed_boost_timer > 0:
+        ratio = player.speed_boost_timer / (60 * 15)
+        boosts.append(("SPEED", (200, 100, 255), ratio))
+    if player.dmg_boost_timer > 0:
+        ratio = player.dmg_boost_timer / (60 * 15)
+        boosts.append(("2xDMG", (255, 120, 20), ratio))
+    for i, (b, bc, ratio) in enumerate(boosts):
+        bx = 222 + i * 90; by = 78
+        pygame.draw.rect(surf, (30, 30, 30), (bx, by, 80, 12), border_radius=3)
+        pygame.draw.rect(surf, bc, (bx, by, int(80 * ratio), 12), border_radius=3)
+        surf.blit(font_tiny.render(b, True, bc), (bx + 2, by + 1))
+
+    # ── Score (Mitte, größer, mit Schatten) ──
+    sc_txt = f"SCORE: {player.score:,}".replace(",", ".")
+    sc_shadow = font_med.render(sc_txt, True, (60, 40, 0))
+    sc = font_med.render(sc_txt, True, YELLOW)
+    surf.blit(sc_shadow, (WIDTH//2 - sc.get_width()//2 + 2, 15))
+    surf.blit(sc, (WIDTH//2 - sc.get_width()//2, 13))
+
+    # Schwierigkeit
+    diff_cfg = get_diff()
+    df = font_tiny.render(diff_cfg["label"], True, diff_cfg["color"])
+    surf.blit(df, (WIDTH//2 - df.get_width()//2, 35))
+
+    # ── Rechts: Zone + Gegner ──
+    right_panel = pygame.Surface((200, 90), pygame.SRCALPHA)
+    right_panel.fill((0, 0, 0, 150))
+    pygame.draw.rect(right_panel, (60, 60, 80), (0, 0, 200, 90), 1, border_radius=4)
+    surf.blit(right_panel, (WIDTH - 208, 6))
+    zt = font_small.render(f"ZONE {zone_num}/{NUM_ZONES}", True, WHITE)
+    nt = font_tiny.render(zone_name.split(":")[-1].strip() if ":" in zone_name else zone_name, True, GRAY)
+    et = font_tiny.render(f"⬛ Boden: {enemies_left}", True, (255, 150, 150))
+    at = font_tiny.render(f"✈ Luft:  {air_left}", True, CYAN)
+    surf.blit(zt, (WIDTH - zt.get_width() - 14, 12))
+    surf.blit(nt, (WIDTH - nt.get_width() - 14, 30))
+    surf.blit(et, (WIDTH - et.get_width() - 14, 48))
+    surf.blit(at, (WIDTH - at.get_width() - 14, 63))
+
+    draw_weapon_xp_bar(surf, player.weapon)
+
+    # ── Pickup-Message ──
+    if player.pickup_msg_timer > 0:
+        alpha = min(255, player.pickup_msg_timer * 5)
+        pm = font_med.render(f"✚ {player.pickup_msg}", True, YELLOW)
+        ps = pygame.Surface((pm.get_width() + 24, pm.get_height() + 12), pygame.SRCALPHA)
+        ps.fill((0, 0, 0, 120))
+        pygame.draw.rect(ps, YELLOW, (0, 0, pm.get_width()+24, pm.get_height()+12), 1, border_radius=5)
+        ps.blit(pm, (12, 6))
+        ps.set_alpha(alpha)
+        surf.blit(ps, (WIDTH//2 - ps.get_width()//2, HEIGHT//2 - 80))
 
 # ═══════════════════════════════════════════════════
 #  WELT
@@ -2295,28 +2825,45 @@ def play_zone(zone_num,player):
 
         all_air=[a for a in air_enemies+jetpack_soldiers if a.alive]
         for b in bullets: b.update()
+
+        # Scharfschütze: Leucht-Trail zeichnen
+        for b in bullets:
+            if b.alive and b.is_sniper:
+                PARTICLES.spawn_sniper_trail(
+                    b.x - b.vx*3, b.y - b.vy*3,
+                    b.x, b.y
+                )
         for r in player_rockets: r.update(all_air)
 
         # ── Treffer: Spieler-Kugeln ──
         def do_enemy_kill(e_obj, is_air_type=False, is_tank_type=False, is_boss_type=False):
             nonlocal first_kill_done, tank_killed
             COMBO.kill()
-            bonus=COMBO.score_bonus()
-            diff_mult=get_diff()["score_mult"]
-            if is_boss_type: player.score+=int(2000*diff_mult)
-            elif is_tank_type: player.score+=int(300*zone_num*diff_mult)
-            elif is_air_type: player.score+=int(200*zone_num*diff_mult)
-            else: player.score+=int(100*zone_num*bonus*diff_mult)
-            # Waffen-Kill registrieren
-            leveled=WSTATS.add_kill(player.weapon.name)
+            bonus = COMBO.score_bonus()
+            diff_mult = get_diff()["score_mult"]
+
+            if is_boss_type:   pts = int(2000 * diff_mult)
+            elif is_tank_type: pts = int(300 * zone_num * diff_mult)
+            elif is_air_type:  pts = int(200 * zone_num * diff_mult)
+            else:              pts = int(100 * zone_num * bonus * diff_mult)
+
+            player.score += pts
+
+            # Kill-Flash + Damage Number
+            intensity = 120 if is_boss_type else 80 if is_tank_type else 40
+            KILL_FLASH.trigger(intensity)
+            DMG_NUMBERS.add(e_obj.rect.centerx, e_obj.rect.top - 10, pts, is_kill=True)
+
+            leveled = WSTATS.add_kill(player.weapon.name)
             if leveled:
                 SFX.play(SFX.level_up)
-                if WSTATS.get_level(player.weapon.name)==3: unlock("weapon_max")
-            if not first_kill_done: unlock("first_blood");first_kill_done=True
-            if is_tank_type and not tank_killed: unlock("tank_killer");tank_killed=True
+                if WSTATS.get_level(player.weapon.name) == 3: unlock("weapon_max")
+
+            if not first_kill_done: unlock("first_blood"); first_kill_done = True
+            if is_tank_type and not tank_killed: unlock("tank_killer"); tank_killed = True
             if is_air_type:
-                player.air_kills+=1
-                if player.air_kills>=10: unlock("air_ace")
+                player.air_kills += 1
+                if player.air_kills >= 10: unlock("air_ace")
 
         for b in bullets:
             if not b.alive: continue
@@ -2325,24 +2872,28 @@ def play_zone(zone_num,player):
                 if not e.alive: continue
                 if b.get_rect().colliderect(e.rect):
                     e.take_damage(b.damage);hit=True;b.alive=False
+                    DMG_NUMBERS.add(e.rect.centerx, e.rect.top, b.damage)
                     if not e.alive: do_enemy_kill(e);break
             if hit: continue
             for t in tanks:
                 if not t.alive: continue
                 if b.get_rect().colliderect(t.rect):
                     t.take_damage(b.damage,is_rocket=False);hit=True;b.alive=False
+                    DMG_NUMBERS.add(e.rect.centerx, e.rect.top, b.damage)
                     if not t.alive: do_enemy_kill(t,is_tank_type=True);break
             if hit: continue
             for j in jetpack_soldiers:
                 if not j.alive: continue
                 if b.get_rect().colliderect(j.rect):
                     j.take_damage(b.damage);hit=True;b.alive=False
+                    DMG_NUMBERS.add(e.rect.centerx, e.rect.top, b.damage)
                     if not j.alive: do_enemy_kill(j,is_air_type=True);break
             if hit: continue
             for a in air_enemies:
                 if not a.alive: continue
                 if b.get_rect().colliderect(a.rect):
                     a.take_damage(b.damage);hit=True;b.alive=False
+                    
                     if not a.alive: do_enemy_kill(a,is_air_type=True);break
             if hit: continue
             if boss and boss.alive and b.get_rect().colliderect(boss.rect):
@@ -2431,10 +2982,24 @@ def play_zone(zone_num,player):
             if current_difficulty=="hard" and zone_num==NUM_ZONES: unlock("hard_clear")
             if is_boss_zone:
                 if boss is None or not boss.alive: SFX.play(SFX.zone_clear);return "win"
-            else:
-                SFX.play(SFX.zone_clear)
-                player.score+=int(300*zone_num*get_diff()["score_mult"]); return "next_zone"
-
+            else: SFX.play(SFX.zone_clear)
+            ZONE_CLEAR_FX.trigger()
+            player.score += int(300 * zone_num * get_diff()["score_mult"])
+            # Kurz anzeigen, dann weiter
+            for _ in range(160):
+                clock.tick(FPS)
+                for ev in pygame.event.get():
+                    if ev.type == pygame.QUIT: pygame.quit(); sys.exit()
+                ZONE_CLEAR_FX.update()
+                clear_surf = pygame.Surface((WIDTH, HEIGHT))
+                draw_world(clear_surf, cfg, cam_x, tick)
+                player.draw(clear_surf, cam_x)
+                screen.fill(DARK)
+                screen.blit(clear_surf, (0, 0))
+                ZONE_CLEAR_FX.draw(screen)
+                pygame.display.flip()
+            return "next_zone"
+    
         # ── ZEICHNEN ──
         ox2,oy2=get_shake_offset()
         game_surf=pygame.Surface((WIDTH,HEIGHT))
@@ -2453,9 +3018,18 @@ def play_zone(zone_num,player):
         for a in air_enemies:
             if camera.in_view(a.x): a.draw(game_surf,cam_x)
         if boss and boss.alive and camera.in_view(boss.x): boss.draw(game_surf,cam_x)
-        player.draw(game_surf,cam_x)
+        player.draw(game_surf, cam_x)
+        DMG_NUMBERS.update()
+        DMG_NUMBERS.draw(game_surf, cam_x)
         WEATHER.draw_front(game_surf)
-        screen.fill(DARK);screen.blit(game_surf,(ox2,oy2))
+
+        screen.fill(DARK)
+        screen.blit(game_surf, (ox2, oy2))
+        KILL_FLASH.update()
+        KILL_FLASH.draw(screen)   # Nach blit, über allem
+        draw_vignette(screen, player)
+        ZONE_CLEAR_FX.update()
+        ZONE_CLEAR_FX.draw(screen)
 
         el=len(enemies)+len(tanks)+len(jetpack_soldiers)
         al=len(air_enemies)+(1 if boss and boss.alive and is_boss_zone else 0)
